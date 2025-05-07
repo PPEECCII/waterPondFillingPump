@@ -3,15 +3,21 @@
 
 #define PUMP 3
 
-#define CYCLE_DURARTION 5 //IN SECONDS (MODIFY ONLY TO TEST FASTER)
+#define SCANNING_PERIOD 2 //IN SECONDS
+
+#define PERIODS_PER_CYCLE 3
 
 #define MAX_WORKING_CYCLES 10
+
+#define COOLDOWN_CYCLE_DURATION 3 //IN SECONDS
 
 #define COOLDOWN_CYCLES 3
 
 #define FAILED_COOLDOWN_CYCLES 10
 
-hw_timer_t *timer = NULL;
+hw_timer_t *workingTimer = NULL;
+
+hw_timer_t *cooldownTimer = NULL;
 
 int workingCycles = COOLDOWN_CYCLES;
 
@@ -41,12 +47,25 @@ bool isRunningWater() {
 }
 
 void startTimer() {
-  timer = timerBegin(1000000);
+  //workingTimer = timerBegin(1000000);
+  //timerAttachInterrupt(timer, &pumpWork);
+  //timerAlarm(timer, SCANNING_PERIOD * 1000000, true, 0);
+  //timerWrite(timer, 0);
 
-  timerAttachInterrupt(timer, &pumpWork);
+  workingTimer = timerBegin(1000000);
+  timerAttachInterrupt(workingTimer, &onTimer1);
+  timerAlarm(workingTimer, 3 * 1000000, true, 0);
+  cooldownTimer = timerBegin(1000000);
+  timerAttachInterrupt(cooldownTimer, &onTimer2);
+  timerAlarm(cooldownTimer, 4 * 1000000, true, 0);
+}
 
-  timerAlarm(timer, CYCLE_DURARTION * 1000000, true, 0);
-  timerWrite(timer, 0);
+void onTimer1() {
+  Serial.println("TIMER 1");
+}
+
+void onTimer2() {
+  Serial.println("TIMER 2");
 }
 
 void pumpWork() {
