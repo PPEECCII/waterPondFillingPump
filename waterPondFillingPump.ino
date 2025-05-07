@@ -3,25 +3,27 @@
 
 #define PUMP 3
 
-#define SCANNING_PERIOD 2 //IN SECONDS
+#define SCANNING_PERIOD 3 //IN SECONDS
 
-#define PERIODS_PER_CYCLE 3
+#define PERIODS_PER_CYCLE 6
 
 #define MAX_WORKING_CYCLES 10
 
-#define COOLDOWN_CYCLE_DURATION 3 //IN SECONDS
+#define COOLDOWN_CYCLE_DURATION 2 //IN SECONDS
 
 #define COOLDOWN_CYCLES 3
 
-#define FAILED_COOLDOWN_CYCLES 10
+#define FAILED_COOLDOWN_CYCLES 5
 
 hw_timer_t *workingTimer = NULL;
 
 hw_timer_t *cooldownTimer = NULL;
 
-int workingCycles = COOLDOWN_CYCLES;
+int workingCycles = 0, workingPeriods = 0;;
 
 bool isOn = false, failed = false;
+
+bool waterScans[PERIODS_PER_CYCLE];
 
 void setup() {
   Serial.begin(115200);
@@ -30,6 +32,8 @@ void setup() {
   pinMode(BUTTON_PIN, INPUT);
   pinMode(PUMP, OUTPUT);
   startTimer();
+  timerStop(workingTimer);
+  turnPumpOn();
 }
 
 void loop() {
@@ -46,67 +50,91 @@ bool isRunningWater() {
   return count > 1;
 }
 
+bool isEnoughWater() {
+  int c = 0;
+  Serial.print("{");
+  for(int i = 0; i < PERIODS_PER_CYCLE; i++) {
+      Serial.print(i);
+      Serial.print(" : ");
+      if(waterScans[i]) {
+        Serial.print("YES, ");
+        c++;
+      } else {
+        Serial.print("NO, ");
+      }
+  }
+  Serial.print("}, ");
+  Serial.print(c);
+  Serial.print(" / ");
+  Serial.print(PERIODS_PER_CYCLE);
+  Serial.print(" = ");
+  float r = (float)c / (float)PERIODS_PER_CYCLE;
+  Serial.println(r);
+  return r >= 0.5;
+}
+
 void startTimer() {
-  //workingTimer = timerBegin(1000000);
-  //timerAttachInterrupt(timer, &pumpWork);
-  //timerAlarm(timer, SCANNING_PERIOD * 1000000, true, 0);
-  //timerWrite(timer, 0);
-
   workingTimer = timerBegin(1000000);
-  timerAttachInterrupt(workingTimer, &onTimer1);
-  timerAlarm(workingTimer, 3 * 1000000, true, 0);
+  timerAttachInterrupt(workingTimer, &onWorkingTimer);
+  timerAlarm(workingTimer, SCANNING_PERIOD * 1000000, true, 0);
+
   cooldownTimer = timerBegin(1000000);
-  timerAttachInterrupt(cooldownTimer, &onTimer2);
-  timerAlarm(cooldownTimer, 4 * 1000000, true, 0);
+  timerAttachInterrupt(cooldownTimer, &onCooldownTimer);
+  timerAlarm(cooldownTimer, COOLDOWN_CYCLE_DURATION * COOLDOWN_CYCLES * 1000000, false, 0);
 }
 
-void onTimer1() {
-  Serial.println("TIMER 1");
-}
-
-void onTimer2() {
-  Serial.println("TIMER 2");
-}
-
-void pumpWork() {
-  
+void onWorkingTimer() {
+  waterScans[workingPeriods++] = isRunningWater();
+  Serial.print(workingPeriods);
+  Serial.print(" PERIODOS, ");
   Serial.print(workingCycles);
-  Serial.print(" CICLOS ");
-  Serial.println(isOn ? "ON" : "OFF");
-  
-  if(isOn) {
-    if(workingCycles >= MAX_WORKING_CYCLES) {
-      turnPumpOff();
-    } else if(!isRunningWater()) {
+  Serial.println(" CICLOS");
+  if(workingPeriods >= PERIODS_PER_CYCLE) {
+    workingCycles++;
+    workingPeriods = 0;
+    if(!isEnoughWater()) {
       failed = true;
       turnPumpOff();
-    } else {
-      workingCycles++;
+    } else if(workingCycles >= MAX_WORKING_CYCLES) {
+      failed = false;
+      turnPumpOff();
     }
-  } else {
-    if(workingCycles >= (failed ? FAILED_COOLDOWN_CYCLES : COOLDOWN_CYCLES)) {
-      turnPumpOn();
-    }
-     else {
-      workingCycles++;
-     }
-  }
 
+  }
+}
+
+
+void onCooldownTimer() {
+  turnPumpOn();
 }
 
 boolean turnPumpOff() {
   Serial.println(" OFF ");
+  
+  timerAlarm(cooldownTimer, COOLDOWN_CYCLE_DURATION * (failed ? FAILED_COOLDOWN_CYCLES : COOLDOWN_CYCLES) * 1000000, false, 0);
+
+  timerStop(workingTimer);
+  timerRestart(cooldownTimer);
+  timerStart(cooldownTimer);
+
   digitalWrite(PUMP, LOW);
-  workingCycles = 1;
+
+  workingCycles = 0;
   isOn = false;
   return true;
 }
 
 boolean turnPumpOn() {
   Serial.println(" ON ");
+  
+  timerStop(cooldownTimer);
+  timerRestart(workingTimer);
+  timerStart(workingTimer);
+
   digitalWrite(PUMP, HIGH);
+
   failed = false;
-  workingCycles = 1;
+  workingCycles = 0;
   isOn = true;
   return true;
 }
